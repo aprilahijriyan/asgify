@@ -131,12 +131,9 @@ Connected (press CTRL+C to quit)
 - Pure ASGI implementation with minimal dependencies
 - No magic, no hidden costs - what you write is what you get
 
-### ⚡ **Async-First Architecture**
-
-- Built from the ground up for async/await
-- Non-blocking I/O for maximum performance
-
 ### 🎯 **Context Classes That Rock**
+
+> _The python web framework out there has the same style, but asgify is different because it uses Context to handle requests and responses!_
 
 ```python
 # HTTP Context - Simple & Powerful
@@ -157,7 +154,7 @@ await ctx.send_text(f"Echo: {message}")
 
 ### 📦 **Minimal Dependencies**
 
-- Only `asgiref` and `fast-query-parsers`
+- Only `asgiref`, `fast-query-parsers` and `multidict`
 - No bloat, no surprises
 
 ### 🔧 **Developer Experience**

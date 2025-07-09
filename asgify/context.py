@@ -1,5 +1,4 @@
-from collections import defaultdict
-from typing import Union, cast, Optional, TYPE_CHECKING
+from typing import Literal, Union, cast, Optional, TYPE_CHECKING, TypeVar, Generic
 from asgiref.typing import (
     Scope,
     HTTPScope,
@@ -11,15 +10,19 @@ from asgiref.typing import (
 from fast_query_parsers import parse_url_encoded_dict
 from asgify.errors import ClientDisconnected
 from asgify.status import WS_1000_NORMAL_CLOSURE, WS_1006_ABNORMAL_CLOSURE
+from multidict import CIMultiDict
 
 if TYPE_CHECKING:
     from .app import Asgify
 
 
-class BaseContext:
+StateT = TypeVar("StateT")
+
+
+class BaseContext(Generic[StateT]):
     def __init__(
         self,
-        app: "Asgify",
+        app: "Asgify[StateT]",
         scope: Scope,
         receive: ASGIReceiveCallable,
         send: ASGISendCallable,
@@ -37,7 +40,7 @@ class BaseContext:
         self._scope = scope
         self._receive = receive
         self._send = send
-        self._headers = {}
+        self._headers: Optional[CIMultiDict[str]] = None
         self._params: dict[str, Union[str, list[str]]] = {}
         self.local = {}
 
@@ -57,9 +60,22 @@ class BaseContext:
         Return the HTTP method from the ASGI scope.
 
         Returns:
-            str: The HTTP method (e.g., 'GET', 'POST', 'PUT', 'DELETE').
+            str: The HTTP method (e.g., 'GET', 'POST', 'PUT', 'DELETE', etc).
         """
-        return cast(str, self._scope.get("method"))
+        return cast(
+            Literal[
+                "GET",
+                "POST",
+                "PUT",
+                "DELETE",
+                "PATCH",
+                "HEAD",
+                "OPTIONS",
+                "TRACE",
+                "CONNECT",
+            ],
+            self._scope.get("method"),
+        )
 
     @property
     def scheme(self):
@@ -72,30 +88,30 @@ class BaseContext:
         return self._scope.get("scheme")
 
     @property
-    def state(self):
+    def state(self) -> StateT:
         """
         Return the application state from the ASGI scope.
 
         Returns:
             dict: The application state dictionary.
         """
-        return self._scope.get("state", {})
+        return cast(StateT, self._scope.get("state", {}))
 
     @property
     def headers(self):
         """
-        Return the request headers as a dictionary with header names as keys and lists of values.
+        Return the request headers as a CIMultiDict (case-insensitive MultiDict).
 
         Returns:
-            dict[str, list[str]]: The request headers.
+            CIMultiDict[str]: The request headers.
         """
-        if self._headers:
+        if self._headers is not None:
             return self._headers
 
-        hdrs = defaultdict(list)
+        hdrs = CIMultiDict[str]()
         for name, value in self._scope.get("headers", []):
-            hdrs[name.decode("latin-1").lower()].append(value.decode("latin-1"))
-        self._headers = dict(hdrs)
+            hdrs.add(name.decode("latin-1"), value.decode("latin-1"))
+        self._headers = hdrs
         return self._headers
 
     @property
@@ -148,10 +164,10 @@ class BaseContext:
             raise ClientDisconnected() from e
 
 
-class HTTPContext(BaseContext):
+class HTTPContext(BaseContext[StateT]):
     def __init__(
         self,
-        app: "Asgify",
+        app: "Asgify[StateT]",
         scope: HTTPScope,
         receive: ASGIReceiveCallable,
         send: ASGISendCallable,
@@ -187,7 +203,7 @@ class HTTPContext(BaseContext):
     async def start(
         self,
         status: int,
-        headers: Optional[dict[str, str]] = {},
+        headers: Optional[dict[str, str]] = None,
         trailers: Optional[bool] = False,
     ):
         """
@@ -233,10 +249,10 @@ class HTTPContext(BaseContext):
         )
 
 
-class WebSocketContext(BaseContext):
+class WebSocketContext(BaseContext[StateT]):
     def __init__(
         self,
-        app: "Asgify",
+        app: "Asgify[StateT]",
         scope: WebSocketScope,
         receive: ASGIReceiveCallable,
         send: ASGISendCallable,
@@ -254,14 +270,16 @@ class WebSocketContext(BaseContext):
         self._connected = False
 
     async def accept(
-        self, subprotocol: Optional[str] = None, headers: dict[str, str] = {}
+        self,
+        subprotocol: Optional[str] = None,
+        headers: Optional[dict[str, str]] = None,
     ):
         """
         Accept the WebSocket connection, optionally specifying a subprotocol and headers.
 
         Args:
             subprotocol (Optional[str]): The WebSocket subprotocol to use.
-            headers (dict[str, str]): Additional headers to include in the accept message.
+            headers (Optional[dict[str, str]]): Additional headers to include in the accept message.
         Raises:
             AssertionError: If the WebSocket is already connected.
             ValueError: If the received message is not a WebSocket connect event.
@@ -277,7 +295,7 @@ class WebSocketContext(BaseContext):
 
         # Convert headers to list[tuple[bytes, bytes]]
         header_list: list[tuple[bytes, bytes]] = []
-        for name, value in headers.items():
+        for name, value in (headers or {}).items():
             header_list.append((name.encode("latin-1"), value.encode("latin-1")))
 
         message["headers"] = header_list
@@ -378,3 +396,4 @@ class WebSocketContext(BaseContext):
 
         await self.send({"type": "websocket.close", "code": code, "reason": reason})
         self._connected = False
+        raise ClientDisconnected(code=code, reason=reason)

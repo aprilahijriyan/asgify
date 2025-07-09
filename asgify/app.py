@@ -5,6 +5,8 @@ from typing import (
     Type,
     cast,
     AsyncContextManager,
+    TypeVar,
+    Generic,
 )
 from asgiref.typing import (
     Scope,
@@ -18,7 +20,10 @@ from asgify.context import HTTPContext, WebSocketContext
 from asgify.status import HTTP_503_SERVICE_UNAVAILABLE, HTTP_STATUS_CODES
 
 
-class Asgify:
+StateT = TypeVar("StateT")
+
+
+class Asgify(Generic[StateT]):
     """
     ASGI application wrapper for HTTP, WebSocket, and lifespan event handling.
 
@@ -29,11 +34,13 @@ class Asgify:
 
     def __init__(
         self,
-        lifespan: Optional[Callable[[], AsyncContextManager[dict]]] = None,
-        http: Optional[Callable[[HTTPContext], Awaitable[None]]] = None,
-        http_context_class: Type[HTTPContext] = HTTPContext,
-        websocket: Optional[Callable[[WebSocketContext], Awaitable[None]]] = None,
-        websocket_context_class: Type[WebSocketContext] = WebSocketContext,
+        lifespan: Optional[Callable[[], AsyncContextManager[StateT]]] = None,
+        http: Optional[Callable[["HTTPContext[StateT]"], Awaitable[None]]] = None,
+        http_context_class: Type["HTTPContext[StateT]"] = HTTPContext,
+        websocket: Optional[
+            Callable[["WebSocketContext[StateT]"], Awaitable[None]]
+        ] = None,
+        websocket_context_class: Type["WebSocketContext[StateT]"] = WebSocketContext,
     ) -> None:
         """
         Initialize the Asgify application.
