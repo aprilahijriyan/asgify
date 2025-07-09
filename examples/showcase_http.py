@@ -9,6 +9,15 @@ from asgify.status import (
 )
 
 
+def flatten_headers(ctx: HTTPContext):
+    hdrs = {}
+    for k in set(ctx.headers.keys()):
+        values = ctx.headers.getall(k)
+        f_value = ",".join(values)
+        hdrs[k] = f_value
+    return hdrs
+
+
 async def http_handler(ctx: HTTPContext):
     # Get path and method
     path = ctx.path
@@ -16,7 +25,15 @@ async def http_handler(ctx: HTTPContext):
 
     if path == "/" and method == "GET":
         await ctx.start(HTTP_200_OK, {"content-type": "application/json"})
-        await ctx.end(json.dumps({"message": "Hello from asgify!"}).encode())
+        await ctx.end(
+            json.dumps(
+                {
+                    "message": "Hello from asgify!",
+                    "headers": flatten_headers(ctx),
+                    "params": ctx.params,
+                }
+            ).encode()
+        )
 
     elif path.startswith("/users/") and method == "GET":
         user_id = path.split("/users/")[-1]
