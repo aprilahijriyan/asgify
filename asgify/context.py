@@ -173,8 +173,8 @@ class BaseContext(Generic[StateT]):
         if message["type"] in ("http.disconnect", "websocket.disconnect"):
             params: dict[Any, Any] = {}
             if message["type"] == "websocket.disconnect":
-                params["code"] = message["code"]
-                params["reason"] = message["reason"]
+                params["code"] = message.get("code")
+                params["reason"] = message.get("reason", "")
             raise ClientDisconnected(**params)
         return message
 
