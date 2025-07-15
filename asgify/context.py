@@ -1,3 +1,4 @@
+import asyncio
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -301,6 +302,7 @@ class WebSocketContext(BaseContext[StateT]):
         """
         super().__init__(app, scope, receive, send)
         self._connected = False
+        self._lock = asyncio.Lock()
 
     async def accept(
         self,
@@ -317,37 +319,38 @@ class WebSocketContext(BaseContext[StateT]):
             AssertionError: If the WebSocket is already connected.
             ValueError: If the received message is not a WebSocket connect event.
         """  # noqa: E501
-        assert not self.is_connected, "WebSocket is already connected"
-        message = await self.receive()
-        if message["type"] != "websocket.connect":
-            raise ValueError(
-                f"Expected websocket.connect, got {message['type']}"
-            )
+        assert not await self.is_connected(), "WebSocket is already connected"
+        async with self._lock:
+            message = await self.receive()
+            if message["type"] != "websocket.connect":
+                raise ValueError(
+                    f"Expected websocket.connect, got {message['type']}"
+                )
 
-        event = cast(WebSocketAcceptEvent, {"type": "websocket.accept"})
-        if subprotocol:
-            event["subprotocol"] = subprotocol
+            event = cast(WebSocketAcceptEvent, {"type": "websocket.accept"})
+            if subprotocol:
+                event["subprotocol"] = subprotocol
 
-        # Convert headers to list[tuple[bytes, bytes]]
-        header_list: list[tuple[bytes, bytes]] = []
-        for name, value in (headers or {}).items():
-            header_list.append(
-                (name.encode("latin-1"), value.encode("latin-1"))
-            )
+            # Convert headers to list[tuple[bytes, bytes]]
+            header_list: list[tuple[bytes, bytes]] = []
+            for name, value in (headers or {}).items():
+                header_list.append(
+                    (name.encode("latin-1"), value.encode("latin-1"))
+                )
 
-        event["headers"] = header_list
-        await self.send(event)
-        self._connected = True
+            event["headers"] = header_list
+            await self.send(event)
+            self._connected = True
 
-    @property
-    def is_connected(self) -> bool:
+    async def is_connected(self) -> bool:
         """
         Return whether the WebSocket connection is established.
 
         Returns:
             bool: True if connected, False otherwise.
         """
-        return self._connected
+        async with self._lock:
+            return self._connected
 
     async def receive_text(self) -> Optional[str]:
         """
@@ -359,8 +362,7 @@ class WebSocketContext(BaseContext[StateT]):
             AssertionError: If the WebSocket is not connected.
             ValueError: If the received message is not a WebSocket receive event or contains no text data.
         """  # noqa: E501
-        assert self.is_connected, "WebSocket is not connected"
-
+        assert await self.is_connected(), "WebSocket is not connected"
         message = await self.receive()
         if message["type"] != "websocket.receive":
             raise ValueError(
@@ -382,8 +384,7 @@ class WebSocketContext(BaseContext[StateT]):
             AssertionError: If the WebSocket is not connected.
             ValueError: If the received message is not a WebSocket receive event or contains no binary data.
         """  # noqa: E501
-        assert self.is_connected, "WebSocket is not connected"
-
+        assert await self.is_connected(), "WebSocket is not connected"
         message = await self.receive()
         if message["type"] != "websocket.receive":
             raise ValueError(
@@ -404,8 +405,7 @@ class WebSocketContext(BaseContext[StateT]):
         Raises:
             AssertionError: If the WebSocket is not connected.
         """
-        assert self.is_connected, "WebSocket is not connected"
-
+        assert await self.is_connected(), "WebSocket is not connected"
         await self.send({"type": "websocket.send", "text": text, "bytes": None})
 
     async def send_bytes(self, data: bytes) -> None:
@@ -417,8 +417,7 @@ class WebSocketContext(BaseContext[StateT]):
         Raises:
             AssertionError: If the WebSocket is not connected.
         """
-        assert self.is_connected, "WebSocket is not connected"
-
+        assert await self.is_connected(), "WebSocket is not connected"
         await self.send({"type": "websocket.send", "bytes": data, "text": None})
 
     async def close(
@@ -432,11 +431,11 @@ class WebSocketContext(BaseContext[StateT]):
             code (int): The WebSocket close code.
             reason (Optional[str]): The reason for closing the connection.
         """
-        if not self.is_connected:
+        if not await self.is_connected():
             code = WS_1006_ABNORMAL_CLOSURE
-
-        await self.send(
-            {"type": "websocket.close", "code": code, "reason": reason}
-        )
-        self._connected = False
+        async with self._lock:
+            await self.send(
+                {"type": "websocket.close", "code": code, "reason": reason}
+            )
+            self._connected = False
         raise ClientDisconnected(code=code, reason=reason)
