@@ -2,6 +2,8 @@
 
 Opinionless ASGI Framework 🙌
 
+> Lightweight API to simplify [core ASGI specification](https://asgi.readthedocs.io/en/latest/introduction.html)
+
 ## 📦 Installation
 
 ### Using pip
