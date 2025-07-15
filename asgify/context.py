@@ -352,49 +352,61 @@ class WebSocketContext(BaseContext[StateT]):
         async with self._lock:
             return self._connected
 
-    async def receive_text(self) -> Optional[str]:
+    async def receive_data(self) -> Union[str, bytes]:
+        """
+        Receive data from the WebSocket client after the connection is established.
+
+        Returns the data as a string (text) or bytes (binary), depending on the type of message received.
+
+        Raises:
+            AssertionError: If the WebSocket is not connected.
+            ValueError: If the received message type is not 'websocket.receive' or no data is found.
+        Returns:
+            Union[str, bytes]: The data received from the WebSocket client.
+        """
+        assert await self.is_connected(), "WebSocket is not connected"
+        message = await self.receive()
+        if message["type"] != "websocket.receive":
+            raise ValueError(
+                f"Expected websocket.receive, got {message['type']}"
+            )
+
+        data = message.get("bytes")
+        if not data:
+            data = message.get("text")
+
+        assert data, f"Expected text or binary data, got {data}"
+        return data
+
+    async def receive_text(self) -> str:
         """
         Receive a text message from the WebSocket client.
 
         Returns:
-            Optional[str]: The received text message, or None if not present.
+            str: The received text data.
+
         Raises:
-            AssertionError: If the WebSocket is not connected.
-            ValueError: If the received message is not a WebSocket receive event or contains no text data.
-        """  # noqa: E501
-        assert await self.is_connected(), "WebSocket is not connected"
-        message = await self.receive()
-        if message["type"] != "websocket.receive":
-            raise ValueError(
-                f"Expected websocket.receive, got {message['type']}"
-            )
-
-        if "text" not in message:
-            raise ValueError("No text data in WebSocket message")
-
-        return message["text"]
-
-    async def receive_bytes(self) -> Optional[bytes]:
+            ValueError: If the received data is not of type str.
         """
-        Receive a binary message from the WebSocket client.
+        data = await self.receive_data()
+        if not isinstance(data, str):
+            raise ValueError(f"Expected text data, got {data}")
+        return data
+
+    async def receive_bytes(self) -> bytes:
+        """
+        Receive a binary (bytes) message from the WebSocket client after the connection is established.
 
         Returns:
-            Optional[bytes]: The received binary data, or None if not present.
+            bytes: The received binary data.
+
         Raises:
-            AssertionError: If the WebSocket is not connected.
-            ValueError: If the received message is not a WebSocket receive event or contains no binary data.
-        """  # noqa: E501
-        assert await self.is_connected(), "WebSocket is not connected"
-        message = await self.receive()
-        if message["type"] != "websocket.receive":
-            raise ValueError(
-                f"Expected websocket.receive, got {message['type']}"
-            )
-
-        if "bytes" not in message:
-            raise ValueError("No binary data in WebSocket message")
-
-        return message["bytes"]
+            ValueError: If the received data is not of type bytes.
+        """
+        data = await self.receive_data()
+        if not isinstance(data, bytes):
+            raise ValueError(f"Expected binary data, got {data}")
+        return data
 
     async def send_text(self, text: str) -> None:
         """
