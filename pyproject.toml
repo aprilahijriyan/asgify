@@ -28,4 +28,27 @@ Documentation = "https://github.com/aprilahijriyan/asgify#readme"
 dev = [
     "pre-commit>=4.2.0",
     "uvicorn[standard]>=0.35.0",
+    "mypy>=1.0.0",
 ]
+
+[tool.ruff.lint]
+select = [
+    # Pyflakes
+    "F",
+    # Pycodestyle
+    "E",
+    "W",
+    # isort
+    "I001"
+]
+ignore = ["E501"]
+[tool.ruff]
+line-length = 80
+target-version = "py39"
+
+[tool.ruff.format]
+docstring-code-format = true
+docstring-code-line-length = 20
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 88

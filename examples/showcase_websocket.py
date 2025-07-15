@@ -13,7 +13,9 @@ async def websocket_handler(ctx: WebSocketContext):
         try:
             data = await ctx.receive_text()
             print("<", data)
-            reply = json.dumps({"echo": data, "timestamp": datetime.now().isoformat()})
+            reply = json.dumps(
+                {"echo": data, "timestamp": datetime.now().isoformat()}
+            )
             await ctx.send_text(reply)
             print(">", reply)
         except ClientDisconnected:

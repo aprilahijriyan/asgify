@@ -24,15 +24,19 @@ class ClientDisconnected(Exception):
         ...     message = await ctx.receive()
         ... except ClientDisconnected as e:
         ...     if e.code:
-        ...         print(f"WebSocket closed with code {e.code}: {e.reason}")
+        ...         print(
+        ...             f"WebSocket closed with code {e.code}: {e.reason}"
+        ...         )
         ...     else:
-        ...         print("HTTP client disconnected")
+        ...         print(
+        ...             "HTTP client disconnected"
+        ...         )
 
     Note:
         This exception is automatically raised by the context wrappers in context.py
         and should typically be caught at the application level to handle client
         disconnections gracefully.
-    """
+    """  # noqa: E501
 
     def __init__(
         self, code: Optional[int] = None, reason: Optional[str] = None
@@ -43,7 +47,7 @@ class ClientDisconnected(Exception):
         Args:
             code (Optional[int]): The WebSocket close code. Should be None for HTTP disconnects.
             reason (Optional[str]): The reason for the disconnect. Should be None for HTTP disconnects.
-        """
+        """  # noqa: E501
         super().__init__()
         self.code = code
         self.reason = reason

@@ -1,4 +1,5 @@
 import json
+
 from asgify.app import Asgify
 from asgify.context import HTTPContext
 from asgify.status import (
@@ -41,7 +42,9 @@ async def http_handler(ctx: HTTPContext):
 
         await ctx.start(HTTP_200_OK, {"content-type": "application/json"})
         await ctx.end(
-            json.dumps({"user_id": user_id, "page": page, "status": "active"}).encode()
+            json.dumps(
+                {"user_id": user_id, "page": page, "status": "active"}
+            ).encode()
         )
 
     elif path == "/api/data" and method == "POST":

@@ -1,8 +1,9 @@
-from typing import TypedDict, AsyncGenerator
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator, TypedDict
+
 from asgify.app import Asgify
 from asgify.context import HTTPContext
 from asgify.status import HTTP_200_OK
-from contextlib import asynccontextmanager
 
 
 class AppState(TypedDict):
@@ -18,7 +19,11 @@ async def lifespan() -> AsyncGenerator[AppState, None]:
     # Clean up resources, close connections, etc.
 
 
-async def http_entrypoint(ctx: HTTPContext[AppState]):
+class CustomHTTPContext(HTTPContext[AppState]):
+    pass
+
+
+async def http_entrypoint(ctx: CustomHTTPContext):
     """Entrypoint function for HTTP requests in your ASGI application.
 
     This function handles incoming HTTP requests and provides a simple
@@ -40,4 +45,8 @@ async def http_entrypoint(ctx: HTTPContext[AppState]):
     await ctx.end(message.encode())
 
 
-app = Asgify(lifespan=lifespan, http=http_entrypoint)
+app = Asgify(
+    lifespan=lifespan,
+    http=http_entrypoint,
+    http_context_class=CustomHTTPContext,
+)

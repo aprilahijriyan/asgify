@@ -1,16 +1,31 @@
-from typing import Literal, Union, cast, Optional, TYPE_CHECKING, TypeVar, Generic
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncIterator,
+    Generic,
+    Literal,
+    NoReturn,
+    Optional,
+    TypeVar,
+    Union,
+    cast,
+)
+
 from asgiref.typing import (
-    Scope,
-    HTTPScope,
-    ASGISendCallable,
     ASGIReceiveCallable,
+    ASGIReceiveEvent,
+    ASGISendCallable,
+    ASGISendEvent,
+    HTTPScope,
+    Scope,
     WebSocketAcceptEvent,
     WebSocketScope,
 )
 from fast_query_parsers import parse_url_encoded_dict
+from multidict import CIMultiDict
+
 from asgify.errors import ClientDisconnected
 from asgify.status import WS_1000_NORMAL_CLOSURE, WS_1006_ABNORMAL_CLOSURE
-from multidict import CIMultiDict
 
 if TYPE_CHECKING:
     from .app import Asgify
@@ -42,10 +57,10 @@ class BaseContext(Generic[StateT]):
         self._send = send
         self._headers: Optional[CIMultiDict[str]] = None
         self._params: dict[str, Union[str, list[str]]] = {}
-        self.local = {}
+        self.local: dict[str, Any] = {}
 
     @property
-    def path(self):
+    def path(self) -> str:
         """
         Return the request path from the ASGI scope.
 
@@ -55,7 +70,19 @@ class BaseContext(Generic[StateT]):
         return cast(str, self._scope.get("path"))
 
     @property
-    def method(self):
+    def method(
+        self,
+    ) -> Literal[
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE",
+        "PATCH",
+        "HEAD",
+        "OPTIONS",
+        "TRACE",
+        "CONNECT",
+    ]:
         """
         Return the HTTP method from the ASGI scope.
 
@@ -78,14 +105,14 @@ class BaseContext(Generic[StateT]):
         )
 
     @property
-    def scheme(self):
+    def scheme(self) -> Optional[str]:
         """
         Return the URL scheme from the ASGI scope.
 
         Returns:
             str: The URL scheme (e.g., 'http', 'https').
         """
-        return self._scope.get("scheme")
+        return cast(Optional[str], self._scope.get("scheme"))
 
     @property
     def state(self) -> StateT:
@@ -98,7 +125,7 @@ class BaseContext(Generic[StateT]):
         return cast(StateT, self._scope.get("state", {}))
 
     @property
-    def headers(self):
+    def headers(self) -> CIMultiDict[str]:
         """
         Return the request headers as a CIMultiDict (case-insensitive MultiDict).
 
@@ -109,13 +136,15 @@ class BaseContext(Generic[StateT]):
             return self._headers
 
         hdrs = CIMultiDict[str]()
-        for name, value in self._scope.get("headers", []):
+        for name, value in cast(
+            list[tuple[bytes, bytes]], self._scope.get("headers", [])
+        ):
             hdrs.add(name.decode("latin-1"), value.decode("latin-1"))
         self._headers = hdrs
         return self._headers
 
     @property
-    def params(self):
+    def params(self) -> dict[str, Union[str, list[str]]]:
         """
         Return the query parameters as a dictionary.
 
@@ -125,11 +154,11 @@ class BaseContext(Generic[StateT]):
         if self._params:
             return self._params
 
-        query_string = self._scope.get("query_string", b"")
+        query_string = cast(bytes, self._scope.get("query_string", b""))
         self._params = parse_url_encoded_dict(query_string)
         return self._params
 
-    async def receive(self):
+    async def receive(self) -> Union[ASGIReceiveEvent, NoReturn]:
         """
         Wrapper for the receive callable with connection close handling.
         Raises ClientDisconnected if the client disconnects.
@@ -141,14 +170,14 @@ class BaseContext(Generic[StateT]):
         """
         message = await self._receive()
         if message["type"] in ("http.disconnect", "websocket.disconnect"):
-            params = {}
+            params: dict[Any, Any] = {}
             if message["type"] == "websocket.disconnect":
                 params["code"] = message["code"]
                 params["reason"] = message["reason"]
             raise ClientDisconnected(**params)
         return message
 
-    async def send(self, message):
+    async def send(self, message: ASGISendEvent) -> None:
         """
         Wrapper for the send callable with connection close handling.
         Raises ClientDisconnected if the connection is closed unexpectedly.
@@ -183,7 +212,7 @@ class HTTPContext(BaseContext[StateT]):
         """
         super().__init__(app, scope, receive, send)
 
-    async def read_body(self):
+    async def read_body(self) -> AsyncIterator[bytes]:
         """
         Asynchronously read the HTTP request body in chunks.
         Yields each chunk as bytes until the body is fully read.
@@ -204,20 +233,22 @@ class HTTPContext(BaseContext[StateT]):
         self,
         status: int,
         headers: Optional[dict[str, str]] = None,
-        trailers: Optional[bool] = False,
-    ):
+        trailers: bool = False,
+    ) -> None:
         """
         Start the HTTP response by sending the response start message with status, headers, and optional trailers.
 
         Args:
             status (int): The HTTP status code.
             headers (Optional[dict[str, str]]): The response headers.
-            trailers (Optional[bool]): Whether to expect HTTP trailers.
+            trailers (bool): Whether to expect HTTP trailers.
         """
         # Convert headers to iterable[tuple[bytes, bytes]]
         header_list = []
         for name, value in (headers or {}).items():
-            header_list.append((name.encode("latin-1"), value.encode("latin-1")))
+            header_list.append(
+                (name.encode("latin-1"), value.encode("latin-1"))
+            )
 
         await self.send(
             {
@@ -228,16 +259,18 @@ class HTTPContext(BaseContext[StateT]):
             }
         )
 
-    async def write(self, body: bytes):
+    async def write(self, body: bytes) -> None:
         """
         Send a chunk of the HTTP response body.
 
         Args:
             body (bytes): The response body chunk to send.
         """
-        await self.send({"type": "http.response.body", "body": body, "more_body": True})
+        await self.send(
+            {"type": "http.response.body", "body": body, "more_body": True}
+        )
 
-    async def end(self, body: bytes = b""):
+    async def end(self, body: bytes = b"") -> None:
         """
         End the HTTP response by sending the final body chunk with more_body set to False.
 
@@ -273,7 +306,7 @@ class WebSocketContext(BaseContext[StateT]):
         self,
         subprotocol: Optional[str] = None,
         headers: Optional[dict[str, str]] = None,
-    ):
+    ) -> None:
         """
         Accept the WebSocket connection, optionally specifying a subprotocol and headers.
 
@@ -283,27 +316,31 @@ class WebSocketContext(BaseContext[StateT]):
         Raises:
             AssertionError: If the WebSocket is already connected.
             ValueError: If the received message is not a WebSocket connect event.
-        """
+        """  # noqa: E501
         assert not self.is_connected, "WebSocket is already connected"
         message = await self.receive()
         if message["type"] != "websocket.connect":
-            raise ValueError(f"Expected websocket.connect, got {message['type']}")
+            raise ValueError(
+                f"Expected websocket.connect, got {message['type']}"
+            )
 
-        message = cast(WebSocketAcceptEvent, {"type": "websocket.accept"})
+        event = cast(WebSocketAcceptEvent, {"type": "websocket.accept"})
         if subprotocol:
-            message["subprotocol"] = subprotocol
+            event["subprotocol"] = subprotocol
 
         # Convert headers to list[tuple[bytes, bytes]]
         header_list: list[tuple[bytes, bytes]] = []
         for name, value in (headers or {}).items():
-            header_list.append((name.encode("latin-1"), value.encode("latin-1")))
+            header_list.append(
+                (name.encode("latin-1"), value.encode("latin-1"))
+            )
 
-        message["headers"] = header_list
-        await self.send(message)
+        event["headers"] = header_list
+        await self.send(event)
         self._connected = True
 
     @property
-    def is_connected(self):
+    def is_connected(self) -> bool:
         """
         Return whether the WebSocket connection is established.
 
@@ -321,12 +358,14 @@ class WebSocketContext(BaseContext[StateT]):
         Raises:
             AssertionError: If the WebSocket is not connected.
             ValueError: If the received message is not a WebSocket receive event or contains no text data.
-        """
+        """  # noqa: E501
         assert self.is_connected, "WebSocket is not connected"
 
         message = await self.receive()
         if message["type"] != "websocket.receive":
-            raise ValueError(f"Expected websocket.receive, got {message['type']}")
+            raise ValueError(
+                f"Expected websocket.receive, got {message['type']}"
+            )
 
         if "text" not in message:
             raise ValueError("No text data in WebSocket message")
@@ -342,19 +381,21 @@ class WebSocketContext(BaseContext[StateT]):
         Raises:
             AssertionError: If the WebSocket is not connected.
             ValueError: If the received message is not a WebSocket receive event or contains no binary data.
-        """
+        """  # noqa: E501
         assert self.is_connected, "WebSocket is not connected"
 
         message = await self.receive()
         if message["type"] != "websocket.receive":
-            raise ValueError(f"Expected websocket.receive, got {message['type']}")
+            raise ValueError(
+                f"Expected websocket.receive, got {message['type']}"
+            )
 
         if "bytes" not in message:
             raise ValueError("No binary data in WebSocket message")
 
         return message["bytes"]
 
-    async def send_text(self, text: str):
+    async def send_text(self, text: str) -> None:
         """
         Send a text message to the WebSocket client.
 
@@ -367,7 +408,7 @@ class WebSocketContext(BaseContext[StateT]):
 
         await self.send({"type": "websocket.send", "text": text, "bytes": None})
 
-    async def send_bytes(self, data: bytes):
+    async def send_bytes(self, data: bytes) -> None:
         """
         Send a binary message to the WebSocket client.
 
@@ -382,7 +423,7 @@ class WebSocketContext(BaseContext[StateT]):
 
     async def close(
         self, code: int = WS_1000_NORMAL_CLOSURE, reason: Optional[str] = None
-    ):
+    ) -> NoReturn:
         """
         Close the WebSocket connection with the given code and optional reason.
         If not connected, accept the connection first.
@@ -394,6 +435,8 @@ class WebSocketContext(BaseContext[StateT]):
         if not self.is_connected:
             code = WS_1006_ABNORMAL_CLOSURE
 
-        await self.send({"type": "websocket.close", "code": code, "reason": reason})
+        await self.send(
+            {"type": "websocket.close", "code": code, "reason": reason}
+        )
         self._connected = False
         raise ClientDisconnected(code=code, reason=reason)

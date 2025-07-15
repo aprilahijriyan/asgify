@@ -1,26 +1,29 @@
 from typing import (
+    Any,
+    AsyncContextManager,
     Awaitable,
     Callable,
+    Generic,
     Optional,
     Type,
-    cast,
-    AsyncContextManager,
     TypeVar,
-    Generic,
+    cast,
 )
+
 from asgiref.typing import (
-    Scope,
-    HTTPScope,
-    WebSocketScope,
-    ASGISendCallable,
     ASGIReceiveCallable,
+    ASGISendCallable,
+    HTTPScope,
+    Scope,
+    WebSocketScope,
 )
 
 from asgify.context import HTTPContext, WebSocketContext
 from asgify.status import HTTP_503_SERVICE_UNAVAILABLE, HTTP_STATUS_CODES
 
-
 StateT = TypeVar("StateT")
+_HttpContextT = TypeVar("_HttpContextT", bound=HTTPContext)
+_WebsocketContextT = TypeVar("_WebsocketContextT", bound=WebSocketContext)
 
 
 class Asgify(Generic[StateT]):
@@ -35,12 +38,14 @@ class Asgify(Generic[StateT]):
     def __init__(
         self,
         lifespan: Optional[Callable[[], AsyncContextManager[StateT]]] = None,
-        http: Optional[Callable[["HTTPContext[StateT]"], Awaitable[None]]] = None,
-        http_context_class: Type["HTTPContext[StateT]"] = HTTPContext,
+        http: Optional[Callable[[_HttpContextT], Awaitable[None]]] = None,
+        http_context_class: Type[_HttpContextT] = HTTPContext[Any],
         websocket: Optional[
-            Callable[["WebSocketContext[StateT]"], Awaitable[None]]
+            Callable[[_WebsocketContextT], Awaitable[None]]
         ] = None,
-        websocket_context_class: Type["WebSocketContext[StateT]"] = WebSocketContext,
+        websocket_context_class: Type[_WebsocketContextT] = WebSocketContext[
+            Any
+        ],
     ) -> None:
         """
         Initialize the Asgify application.
@@ -61,7 +66,7 @@ class Asgify(Generic[StateT]):
 
     async def __call__(
         self, scope: Scope, receive: ASGIReceiveCallable, send: ASGISendCallable
-    ):
+    ) -> None:
         """
         ASGI entrypoint. Dispatches incoming events to the appropriate handler based on scope type.
 
@@ -80,19 +85,21 @@ class Asgify(Generic[StateT]):
                 await self.http(ctx)
             else:
                 await ctx.start(HTTP_503_SERVICE_UNAVAILABLE)
-                await ctx.end(HTTP_STATUS_CODES[HTTP_503_SERVICE_UNAVAILABLE].encode())
+                await ctx.end(
+                    HTTP_STATUS_CODES[HTTP_503_SERVICE_UNAVAILABLE].encode()
+                )
 
         elif scope["type"] == "websocket":
             scope = cast(WebSocketScope, scope)
-            ctx = self._websocket_context_class(self, scope, receive, send)
+            ws_ctx = self._websocket_context_class(self, scope, receive, send)
             if self.websocket:
-                await self.websocket(ctx)
+                await self.websocket(ws_ctx)
             else:
-                await ctx.close(reason="Not Implemented")
+                await ws_ctx.close(reason="Not Implemented")
 
     async def _handle_lifespan(
         self, scope: Scope, receive: ASGIReceiveCallable, send: ASGISendCallable
-    ):
+    ) -> None:
         """
         Internal handler for ASGI lifespan events (startup/shutdown).
 
